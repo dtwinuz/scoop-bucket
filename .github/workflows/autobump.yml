@@ -1,0 +1,103 @@
+name: autobump
+
+# bitg'ning yangi relizi chiqqanda manifestni o'zi yangilaydi (dtwinuz/homebrew-tap autobump bilan bir xil), token yo'q:
+#   1. check (ubuntu): dtwinuz/bitg so'nggi relizi manifestdagidan yangiroqmi (pre-release hisobga olinmaydi).
+#   2. bump (Windows): MSI relizdan olinadi, SHA-256 reliz yonidagi .sha256 bilan va SLSA attestation'i (dtwinuz/bitg
+#      build.yml, shu teg, GitHub runner) bilan tekshiriladi; manifest yangilanadi; haqiqiy Scoop bilan o'rnatish +
+#      versiya + CLI + o'chirish (bin/test.ps1) o'tsagina main'ga commit qilinadi.
+# Qo'lda: Actions -> autobump -> Run workflow.
+on:
+  schedule:
+    - cron: "29 */3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: autobump
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cur=$(jq -r .version bucket/bitg.json)
+          tag=$(gh api repos/dtwinuz/bitg/releases/latest -q .tag_name)
+          new=${tag#v}
+          echo "$new" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "teg kutilmagan: $tag"; exit 1; }
+          # faqat oldinga: so'nggi reliz manifestdagidan katta bo'lsagina
+          if [ "$new" = "$cur" ] || [ "$(printf '%s\n%s\n' "$cur" "$new" | sort -V | tail -1)" != "$new" ]; then
+            echo "manifest $cur, so'nggi reliz $new: yangilash kerak emas"
+          else
+            echo "manifest $cur -> $new"
+            echo "version=$new" >> "$GITHUB_OUTPUT"
+          fi
+
+  bump:
+    needs: check
+    if: needs.check.outputs.version != ''
+    runs-on: windows-2025
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Reliz fayli, SHA-256 va attestation
+        id: msi
+        run: |
+          $d = Join-Path $env:RUNNER_TEMP 'rel'
+          $f = Join-Path $d "bitg-$env:VERSION-x64.msi"
+          gh release download "v$env:VERSION" -R dtwinuz/bitg -D $d -p "bitg-$env:VERSION-x64.msi" -p "bitg-$env:VERSION-x64.msi.sha256"
+          if ($LASTEXITCODE) { throw 'gh release download' }
+          $sum = (Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash.ToLowerInvariant()
+          $want = ((Get-Content -Raw -LiteralPath "$f.sha256").Trim() -split '\s+')[0]
+          if ($sum -ne $want) { throw ".sha256 mos emas: $sum / $want" }
+          gh attestation verify $f -R dtwinuz/bitg `
+            --signer-workflow dtwinuz/bitg/.github/workflows/build.yml `
+            --source-ref "refs/tags/v$env:VERSION" --deny-self-hosted-runners
+          if ($LASTEXITCODE) { throw "attestation tekshiruvi o'tmadi" }
+          "sha256=$sum" >> $env:GITHUB_OUTPUT
+      - name: Manifest
+        env:
+          SHA: ${{ steps.msi.outputs.sha256 }}
+        run: |
+          $p = 'bucket/bitg.json'
+          $t = [IO.File]::ReadAllText($p)
+          $old = ($t | ConvertFrom-Json).version
+          $t = $t.Replace("`"version`": `"$old`"", "`"version`": `"$env:VERSION`"")
+          $t = $t.Replace("/v$old/bitg-$old-x64.msi", "/v$env:VERSION/bitg-$env:VERSION-x64.msi")
+          $t = [regex]::Replace($t, '("hash": )"[0-9a-f]{64}"', "`$1`"$env:SHA`"")
+          [IO.File]::WriteAllText($p, $t, [Text.UTF8Encoding]::new($false))
+          git diff --stat
+          $m = $t | ConvertFrom-Json
+          if ($m.version -ne $env:VERSION -or $m.architecture.'64bit'.hash -ne $env:SHA -or
+              $m.architecture.'64bit'.url -notlike "*/v$env:VERSION/bitg-$env:VERSION-x64.msi#/bitg-setup.msi_") {
+            throw 'manifest yangilanmadi'
+          }
+      - name: Scoop bilan o'rnatish, versiya, o'chirish
+        run: ./bin/test.ps1 -Version $env:VERSION
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -q -s -am "bitg $env:VERSION" -m "Release: https://github.com/dtwinuz/bitg/releases/tag/v$env:VERSION"
+          if ($LASTEXITCODE) { throw 'git commit' }
+          git push origin HEAD:main
+          if ($LASTEXITCODE) { throw 'git push' }
+          "### bitg $env:VERSION manifestga yozildi" >> $env:GITHUB_STEP_SUMMARY

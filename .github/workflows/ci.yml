@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "41 4 * * 1" # har dushanba: havola va SHA-256 hali to'g'rimi
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  manifest:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Manifest maydonlari va SHA-256
+        run: |
+          $m = Get-Content -Raw bucket/bitg.json | ConvertFrom-Json
+          foreach ($k in 'version', 'description', 'homepage', 'license', 'architecture', 'installer', 'uninstaller', 'checkver', 'autoupdate') {
+            if (-not $m.PSObject.Properties[$k]) { throw "bitg.json: $k yo'q" }
+          }
+          $v = [regex]::Escape($m.version)
+          $a = $m.architecture.'64bit'
+          if ($a.url -notmatch "^https://github\.com/dtwinuz/bitg/releases/download/v$v/bitg-$v-x64\.msi#/bitg-setup\.msi_$") {
+            throw "url versiyaga mos emas: $($a.url)"
+          }
+          $c = (Invoke-WebRequest -UseBasicParsing ($a.url -replace '#.*$', '.sha256')).Content
+          if ($c -is [byte[]]) { $c = [Text.Encoding]::UTF8.GetString($c) }
+          $sum = ($c.Trim() -split '\s+')[0]
+          if ($sum -ne $a.hash) { throw "hash $($a.hash), relizdagi .sha256 $sum" }
+          "bitg $($m.version): ``$($a.hash)``" >> $env:GITHUB_STEP_SUMMARY
+      - name: Scoop bilan o'rnatish va o'chirish
+        run: ./bin/test.ps1
