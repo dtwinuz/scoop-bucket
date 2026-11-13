@@ -14,7 +14,8 @@ $upgradeCode = '{80B9514E-EB2C-4EA5-B42A-CECB40A16979}'
 
 function Get-BitgProducts {
     $wi = New-Object -ComObject WindowsInstaller.Installer
-    @($wi.GetType().InvokeMember('RelatedProducts', 'GetProperty', $null, $wi, @($upgradeCode)))
+    # StringList COM to'plami: InvokeMember natijasini @() yoymaydi, COM adapter orqali foreach bilan o'qiladi
+    , [string[]]@(foreach ($c in $wi.RelatedProducts($upgradeCode)) { $c })
 }
 
 # Scoop: o'rnatuvchi skript qotirilgan commit'dan, SHA-256 tekshiriladi
@@ -37,10 +38,10 @@ scoop install $manifest
 if ($LASTEXITCODE) { throw "scoop install: $LASTEXITCODE" }
 scoop info bitg | Out-String | Write-Host
 
-$codes = @(Get-BitgProducts)
+$codes = Get-BitgProducts
 if ($codes.Count -ne 1) { throw "o'rnatilgan bitg MSI soni $($codes.Count), kutilgan 1" }
 $wi = New-Object -ComObject WindowsInstaller.Installer
-$ver = $wi.GetType().InvokeMember('ProductInfo', 'GetProperty', $null, $wi, @($codes[0], 'VersionString'))
+$ver = $wi.ProductInfo($codes[0], 'VersionString')
 if ($ver -ne $Version) { throw "MSI versiyasi $ver, kutilgan ${Version}" }
 
 $app = Join-Path $env:ProgramFiles 'bitg'
@@ -55,7 +56,7 @@ Write-Host "bitg $ver o'rnatildi, CLI: $out"
 Write-Host '== scoop uninstall bitg'
 scoop uninstall bitg
 if ($LASTEXITCODE) { throw "scoop uninstall: $LASTEXITCODE" }
-if (@(Get-BitgProducts).Count -ne 0) { throw "scoop uninstall dan keyin bitg MSI qoldi" }
+if ((Get-BitgProducts).Count -ne 0) { throw "scoop uninstall dan keyin bitg MSI qoldi" }
 if (Test-Path -LiteralPath (Join-Path $app 'bitg.exe')) { throw "scoop uninstall dan keyin bitg.exe qoldi" }
 if (Test-Path -LiteralPath "$env:USERPROFILE\scoop\apps\bitg") { throw "Scoop apps\bitg qoldi" }
 Write-Host "bitg ${Version}: o'rnatish va o'chirish o'tdi"

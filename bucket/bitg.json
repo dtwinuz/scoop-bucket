@@ -32,7 +32,7 @@
             "if ($cmd -eq 'update') { return }",
             "# ProductCode har build'da yangi: o'rnatilgan bitg UpgradeCode bo'yicha topiladi",
             "$wi = New-Object -ComObject WindowsInstaller.Installer",
-            "$codes = @($wi.GetType().InvokeMember('RelatedProducts', 'GetProperty', $null, $wi, @('{80B9514E-EB2C-4EA5-B42A-CECB40A16979}')))",
+            "$codes = @(foreach ($c in $wi.RelatedProducts('{80B9514E-EB2C-4EA5-B42A-CECB40A16979}')) { $c })",
             "$admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)",
             "foreach ($c in $codes) {",
             "    $argv = @('/x', $c, '/qn', '/norestart')",
