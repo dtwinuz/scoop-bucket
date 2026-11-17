@@ -3,6 +3,13 @@
 [bitg](https://bitg.uz) uchun [Scoop](https://scoop.sh) bucket. bitg — yozayotganingizda o'zbek matnini 2026-yilgi
 yangi lotin alifbosiga (ö ğ ş ç) o'giradigan Windows kiritish usuli.
 
+[![ci](https://github.com/dtwinuz/scoop-bucket/actions/workflows/ci.yml/badge.svg)](https://github.com/dtwinuz/scoop-bucket/actions/workflows/ci.yml)
+[![bitg](https://img.shields.io/github/v/release/dtwinuz/bitg?label=bitg)](https://github.com/dtwinuz/bitg/releases/latest)
+
+**[bitg.uz](https://bitg.uz) · [Jonli demo](https://wonmor.io/demo/bitg/) · [bitg repo](https://github.com/dtwinuz/bitg) · [Releases](https://github.com/dtwinuz/bitg/releases)**
+
+<p align="center"><a href="https://wonmor.io/demo/bitg/"><img src="https://raw.githubusercontent.com/dtwinuz/bitg/main/docs/screenshots/try.jpg" width="820" alt="bitg: eski yozuvdagi matn yozish paytida 2026-yilgi lotin alifbosiga o'tadi, inglizcha so'zlar o'zgarmaydi"></a></p>
+
 ```powershell
 scoop bucket add dtwinuz https://github.com/dtwinuz/scoop-bucket
 scoop install dtwinuz/bitg
